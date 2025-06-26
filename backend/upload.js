@@ -7,64 +7,75 @@ const path = require('path');
 
 const router = express.Router();
 
-// Multer setup – stores uploaded CSVs in /uploads/
-const upload = multer({ dest: path.join(__dirname, 'uploads/') });
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+const upload = multer({ dest: uploadDir });
 
-// MySQL connection pool
 const pool = mysql.createPool({
   host: 'localhost',
-  user: 'your_mysql_user',
-  password: 'your_mysql_password',
+  user: 'root',
+  password: '',
   database: 'ecommerce_data',
   waitForConnections: true,
   connectionLimit: 10,
 });
 
-// Upload route: /upload
 router.post('/upload', upload.single('file'), async (req, res) => {
-  const filePath = req.file.path;
+  const filePath = req.file?.path;
   const results = [];
+
 
   try {
     const connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-    const stream = fs.createReadStream(filePath)
+    fs.createReadStream(filePath)
       .pipe(csv())
       .on('data', (row) => {
-        results.push(row);
+        results.push([
+          row.order_id,
+          row.order_date,
+          parseInt(row.user_id),
+          parseInt(row.product_id),
+          parseInt(row.quantity),
+          parseFloat(row.price),
+          parseFloat(row.total_amount),
+          row.country,
+          row.city,
+        ]);
       })
       .on('end', async () => {
-        // Use batch insert
-        const insertQuery = `
-          INSERT INTO orders (
-            order_id, order_date, user_id, product_id,
-            quantity, price, total_amount, country, city
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        try {
+          const batchSize = 1000;
+          const insertQuery = `
+            INSERT INTO orders (
+              order_id, order_date, user_id, product_id,
+              quantity, price, total_amount, country, city
+            ) VALUES ?`;
 
-        for (const row of results) {
-          try {
-            await connection.execute(insertQuery, [
-              row.order_id,
-              row.order_date,
-              parseInt(row.user_id),
-              parseInt(row.product_id),
-              parseInt(row.quantity),
-              parseFloat(row.price),
-              parseFloat(row.total_amount),
-              row.country,
-              row.city,
-            ]);
-          } catch (err) {
-            console.error('Error inserting row:', err.message);
+          for (let i = 0; i < results.length; i += batchSize) {
+            const batch = results.slice(i, i + batchSize);
+            await connection.query(insertQuery, [batch]);
           }
-        }
 
-        connection.release();
-        fs.unlinkSync(filePath); // Clean up uploaded file
-        res.send('CSV data uploaded and inserted into MySQL!');
+          await connection.commit();
+          res.status(200).send('CSV uploaded and data inserted into MySQL successfully!');
+        } catch (err) {
+          await connection.rollback();
+          console.error('Insert error:', err.message);
+          res.status(500).send('Error inserting CSV data into database');
+        } finally {
+          connection.release();
+          fs.unlinkSync(filePath);
+        }
       });
   } catch (err) {
-    console.error('Upload error:', err.message);
+    console.error('Upload error:', err);
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
     res.status(500).send('Upload failed');
   }
 });
