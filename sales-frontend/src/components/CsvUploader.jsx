@@ -19,7 +19,7 @@ const CsvUploader = () => {
     try {
       setUploading(true);
       setMessage('');
-      const res = await axios.post('http://localhost:8080/upload', formData, {
+      const res = await axios.post('http://localhost:8080/api/upload', formData, {
 
         headers: {
           'Content-Type': 'multipart/form-data'

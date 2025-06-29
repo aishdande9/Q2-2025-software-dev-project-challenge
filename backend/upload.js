@@ -13,16 +13,10 @@ if (!fs.existsSync(uploadDir)) {
 }
 const upload = multer({ dest: uploadDir });
 
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'ecommerce_data',
-  waitForConnections: true,
-  connectionLimit: 10,
-});
+const pool = require('./db');
 
-router.post('/upload', upload.single('file'), async (req, res) => {
+
+router.post('/', upload.single('file'), async (req, res) => {
   const filePath = req.file?.path;
   const results = [];
 
@@ -50,10 +44,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         try {
           const batchSize = 1000;
           const insertQuery = `
-            INSERT INTO orders (
-              order_id, order_date, user_id, product_id,
-              quantity, price, total_amount, country, city
-            ) VALUES ?`;
+           INSERT IGNORE INTO orders (
+    order_id, order_date, user_id, product_id,
+    quantity, price, total_amount, country, city 
+  ) VALUES ?`;
 
           for (let i = 0; i < results.length; i += batchSize) {
             const batch = results.slice(i, i + batchSize);
