@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import './CsvUploader.css'; 
 
 const CsvUploader = () => {
   const [file, setFile] = useState(null);
